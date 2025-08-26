@@ -347,6 +347,39 @@ async def dict_list(ctx: discord.ApplicationContext):
     embed = create_embed(f"{EMOJI_DICT} {ctx.guild.name} の辞書一覧", "\n".join([f"・`{w}` → `{r}`" for w, r in dictionary.items()]), discord.Color.green())
     await ctx.respond(embed=embed, ephemeral=True)
 
+@bot.slash_command(name="help", description="Botのコマンド一覧と使い方を表示します。")
+async def help_command(ctx: discord.ApplicationContext):
+    embed = create_embed(
+        f"{EMOJI_HELP} HIKAKIN読み上げBot ヘルプ",
+        "TikTokのHIKAKINボイスでメッセージを読み上げるBotです。\n各コマンドの詳しい使い方を以下に示します。",
+    )
+    
+    vc_description = (
+        "`/vc join`: あなたがいるVCに参加し、このチャンネルの読み上げを開始します。\n"
+        "`/vc leave`: VCから退出します。\n"
+        "`/vc mute`: メッセージの読み上げを一時的に停止します。\n"
+        "`/vc unmute`: 読み上げを再開します。"
+    )
+    embed.add_field(
+        name=f"{EMOJI_VC} VC関連コマンド", value=vc_description, inline=False
+    )
+
+    dict_description = (
+        "`/dict add [word] [reading]`: 単語とその読みを辞書に登録します。\n"
+        "`/dict remove [word]`: 辞書から単語を削除します。\n"
+        "`/dict list`: 登録されている単語の一覧を表示します。"
+    )
+    embed.add_field(
+        name=f"{EMOJI_DICT} 辞書関連コマンド", value=dict_description, inline=False
+    )
+
+    other_description = (
+        "**VCへの参加/退出通知**: ユーザーがVCに出入りすると、その旨を読み上げます。"
+    )
+    embed.add_field(name="✨ その他の機能", value=other_description, inline=False)
+    
+    await ctx.respond(embed=embed, ephemeral=True)
+
 # --- コマンド登録 ---
 bot.add_application_command(vc_group)
 bot.add_application_command(dict_group)
