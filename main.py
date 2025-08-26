@@ -213,6 +213,27 @@ async def on_message(message: discord.Message):
         log_debug(guild_id, "VC接続が切れています。メッセージを無視します。")
         return
 
+    if message.content.lower() == "s":
+        log_debug(guild_id, "スキップコマンド 's' を受信しました。")
+        # 再生中か、キューに何かあればスキップ可能
+        can_skip = session.voice_client.is_playing() or not session.queue.empty()
+        if can_skip:
+            log_debug(guild_id, "スキップ処理中... キューをクリアし、再生を停止します。")
+            # キューの中身をすべて空にする
+            while not session.queue.empty():
+                try:
+                    session.queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    break
+            # 現在再生中であれば停止する
+            if session.voice_client.is_playing():
+                session.voice_client.stop()
+            await message.add_reaction("⏩") # スキップ成功のリアクション
+        else:
+            log_debug(guild_id, "スキップ対象がありません。")
+            await message.add_reaction("❌") # スキップ対象がない場合のリアクション
+        return # 's'という文字を読み上げさせないために、ここで処理を終了する
+
     dictionary = dictionaries.get(str(guild_id), {})
     text_to_speak = process_text_for_speech(message, dictionary)
     
