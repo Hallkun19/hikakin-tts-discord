@@ -1,5 +1,4 @@
-py-cord
+discord.py
 python-dotenv
 requests
 PyNaCl
-playsound
