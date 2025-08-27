@@ -217,47 +217,48 @@ async def on_ready():
 async def on_message(message: discord.Message):
     if message.author.bot or not message.guild:
         return
-
+    
     guild_id = message.guild.id
     session = guild_sessions.get(guild_id)
 
     if not session or session.text_channel_id != message.channel.id or session.is_muted:
         return
 
-    if not session.voice_client or not session.voice_client.is_connected():
-        log_debug(guild_id, "VC接続が切れています。メッセージを無視します。")
+    # sessionに保存されたVCを信用せず、guildから現在の最新のVCを取得する
+    active_vc = message.guild.voice_client
+
+    # 最新のVCが存在しない場合、本当の意味で接続が切れている
+    if not active_vc:
+        log_debug(guild_id, "GuildがアクティブなVCを報告していません。メッセージを無視します。")
         return
+
+    # 念のため、セッションが保持するVC情報を最新のものに更新しておく
+    session.voice_client = active_vc
 
     if message.content.lower() == "s":
         log_debug(guild_id, "スキップコマンド 's' を受信しました。")
-        # 再生中か、キューに何かあればスキップ可能
         can_skip = session.voice_client.is_playing() or not session.queue.empty()
         if can_skip:
-            log_debug(
-                guild_id, "スキップ処理中... キューをクリアし、再生を停止します。"
-            )
-            # キューの中身をすべて空にする
+            log_debug(guild_id, "スキップ処理中... キューをクリアし、再生を停止します。")
             while not session.queue.empty():
                 try:
                     session.queue.get_nowait()
                 except asyncio.QueueEmpty:
                     break
-            # 現在再生中であれば停止する
             if session.voice_client.is_playing():
                 session.voice_client.stop()
-            await message.add_reaction("⏩")  # スキップ成功のリアクション
+            await message.add_reaction("⏩")
         else:
             log_debug(guild_id, "スキップ対象がありません。")
-            await message.add_reaction("❌")  # スキップ対象がない場合のリアクション
-        return  # 's'という文字を読み上げさせないために、ここで処理を終了する
+            await message.add_reaction("❌")
+        return
 
     dictionary = dictionaries.get(str(guild_id), {})
     text_to_speak = process_text_for_speech(message, dictionary)
-
+    
     if text_to_speak:
         log_debug(guild_id, f"キューに追加: '{text_to_speak[:30]}...'")
         await session.queue.put(text_to_speak)
-
 
 @bot.event
 async def on_voice_state_update(
