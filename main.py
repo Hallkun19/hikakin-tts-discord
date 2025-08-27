@@ -293,13 +293,11 @@ dict_group = SlashCommandGroup("dict", "読み上げ辞書関連のコマンド"
     name="join", description="VCに参加し、このチャンネルの読み上げを開始します。"
 )
 async def vc_join(ctx: discord.ApplicationContext):
-    await ctx.defer()  # 先に応答を保留する
-
     guild_id = ctx.guild.id
     log_debug(guild_id, f"/vc join が {ctx.author} によって実行されました。")
 
     if not ctx.author.voice:
-        return await ctx.followup.send(
+        return await ctx.respond(
             embed=create_embed(
                 f"{EMOJI_ERROR} エラー",
                 "先にボイスチャンネルに参加してください。",
@@ -308,17 +306,22 @@ async def vc_join(ctx: discord.ApplicationContext):
             ephemeral=True,
         )
 
-    voice_channel = ctx.author.voice.channel
-
-    if guild_id in guild_sessions:
-        log_debug(guild_id, "既存のセッションを停止・削除します。")
-        guild_sessions[guild_id].stop()
-        del guild_sessions[guild_id]
-
-    if ctx.guild.voice_client:
-        await ctx.guild.voice_client.disconnect(force=True)
-
     try:
+        # 最初に暫定的なメッセージで即時応答する
+        await ctx.respond(
+            f"{EMOJI_VC} **{ctx.author.voice.channel.name}** への接続を開始します..."
+        )
+
+        voice_channel = ctx.author.voice.channel
+
+        if guild_id in guild_sessions:
+            log_debug(guild_id, "既存のセッションを停止・削除します。")
+            guild_sessions[guild_id].stop()
+            del guild_sessions[guild_id]
+
+        if ctx.guild.voice_client:
+            await ctx.guild.voice_client.disconnect(force=True)
+
         log_debug(guild_id, f"VC '{voice_channel.name}' に接続します...")
         vc = await voice_channel.connect()
         await ctx.guild.change_voice_state(channel=voice_channel, self_deaf=True)
@@ -335,47 +338,64 @@ async def vc_join(ctx: discord.ApplicationContext):
             f"{EMOJI_VC} 接続しました", f"**{voice_channel.name}** に参加しました。"
         )
         embed.add_field(name="読み上げチャンネル", value=ctx.channel.mention)
-        await ctx.followup.send(embed=embed)
+
+        # 最初のメッセージを編集して最終的な結果を表示する
+        await ctx.edit(content=None, embed=embed)
 
     except Exception as e:
-        log_debug(guild_id, f"VCへの参加に失敗しました: {e}")
-        await ctx.followup.send(
-            embed=create_embed(
-                f"{EMOJI_ERROR} エラー", f"接続に失敗しました: {e}", discord.Color.red()
-            ),
-            ephemeral=True,
+        log_debug(guild_id, f"VCへの参加処理中にエラーが発生しました: {e}")
+        error_embed = create_embed(
+            f"{EMOJI_ERROR} エラー", f"接続に失敗しました: {e}", discord.Color.red()
         )
+        # エラーが発生した場合も、最初のメッセージを編集するか、新しいメッセージを送る
+        if not ctx.interaction.response.is_done():
+            await ctx.respond(embed=error_embed, ephemeral=True)
+        else:
+            await ctx.edit(content=None, embed=error_embed)
 
 
 @vc_group.command(name="leave", description="VCから退出します。")
 async def vc_leave(ctx: discord.ApplicationContext):
-    await ctx.defer()  # 先に応答を保留する
+    try:
+        await ctx.respond(f"{EMOJI_WAVE} 退出処理を開始します...")
 
-    guild_id = ctx.guild.id
-    log_debug(guild_id, f"/vc leave が {ctx.author} によって実行されました。")
+        guild_id = ctx.guild.id
+        log_debug(guild_id, f"/vc leave が {ctx.author} によって実行されました。")
 
-    if not ctx.guild.voice_client:
-        return await ctx.followup.send(
+        if not ctx.guild.voice_client:
+            return await ctx.edit(
+                content=None,
+                embed=create_embed(
+                    f"{EMOJI_ERROR} エラー",
+                    "BotはVCに参加していません。",
+                    discord.Color.red(),
+                ),
+            )
+
+        if guild_id in guild_sessions:
+            log_debug(guild_id, "再生タスクを停止し、セッションを削除します。")
+            guild_sessions[guild_id].stop()
+            del guild_sessions[guild_id]
+
+        await ctx.guild.voice_client.disconnect()
+        log_debug(guild_id, "VCから切断しました。")
+
+        await ctx.edit(
+            content=None,
             embed=create_embed(
-                f"{EMOJI_ERROR} エラー",
-                "BotはVCに参加していません。",
-                discord.Color.red(),
+                f"{EMOJI_WAVE} 退出しました", "ボイスチャンネルから退出しました。"
             ),
-            ephemeral=True,
         )
 
-    if guild_id in guild_sessions:
-        log_debug(guild_id, "再生タスクを停止し、セッションを削除します。")
-        guild_sessions[guild_id].stop()
-        del guild_sessions[guild_id]
-
-    await ctx.guild.voice_client.disconnect()
-    log_debug(guild_id, "VCから切断しました。")
-    await ctx.followup.send(
-        embed=create_embed(
-            f"{EMOJI_WAVE} 退出しました", "ボイスチャンネルから退出しました。"
+    except Exception as e:
+        log_debug(guild_id, f"VCからの退出処理中にエラーが発生しました: {e}")
+        error_embed = create_embed(
+            f"{EMOJI_ERROR} エラー", f"退出に失敗しました: {e}", discord.Color.red()
         )
-    )
+        if not ctx.interaction.response.is_done():
+            await ctx.respond(embed=error_embed, ephemeral=True)
+        else:
+            await ctx.edit(content=None, embed=error_embed)
 
 
 @vc_group.command(name="mute", description="読み上げを一時的に停止します。")
