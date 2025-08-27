@@ -81,6 +81,10 @@ def process_text_for_speech(
     # 辞書置換
     for word, reading in dictionary.items():
         text_to_read = text_to_read.replace(word, reading)
+
+    # <>で囲まれた部分（絵文字、メンションなど）を削除
+    text_to_read = re.sub(r"<.*?>", "", text_to_read)
+
     # URLを置換
     text_to_read = re.sub(r"https?://\S+", "URL", text_to_read)
     # 添付ファイル
