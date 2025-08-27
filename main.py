@@ -46,6 +46,7 @@ def log_debug(guild_id: Optional[int], message: str):
 # --- データクラス (セッション管理) ---
 class GuildSession:
     """サーバーごとのセッション情報を管理するクラス"""
+
     def __init__(self, bot_loop: asyncio.AbstractEventLoop, guild_id: int):
         self.guild_id = guild_id
         self.voice_client: Optional[discord.VoiceClient] = None
@@ -77,10 +78,12 @@ def load_data(filepath: str) -> dict:
     except (FileNotFoundError, json.JSONDecodeError):
         return {}
 
+
 def save_data(filepath: str, data: dict):
     os.makedirs(os.path.dirname(filepath), exist_ok=True)
     with open(filepath, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
+
 
 def create_embed(
     title: str, description: str, color: discord.Color = discord.Color.blue()
@@ -115,11 +118,13 @@ async def generate_tts_bytes(text: str) -> Optional[bytes]:
     if not bot.http_session:
         log_debug(None, "HTTPセッションが初期化されていません。")
         return None
-        
-    headers = {'Content-Type': 'application/json'}
-    data = {'text': text, 'voice': VOICE_ID}
+
+    headers = {"Content-Type": "application/json"}
+    data = {"text": text, "voice": VOICE_ID}
     try:
-        async with bot.http_session.post(TIKTOK_API_URL, json=data, headers=headers, timeout=10) as response:
+        async with bot.http_session.post(
+            TIKTOK_API_URL, json=data, headers=headers, timeout=10
+        ) as response:
             if response.status == 200:
                 json_data = await response.json()
                 if json_data.get("success"):
@@ -129,11 +134,15 @@ async def generate_tts_bytes(text: str) -> Optional[bytes]:
                     log_debug(None, f"TTS API Error: {json_data.get('error')}")
                     return None
             else:
-                log_debug(None, f"TTS API HTTP Error: {response.status} - {await response.text()}")
+                log_debug(
+                    None,
+                    f"TTS API HTTP Error: {response.status} - {await response.text()}",
+                )
                 return None
     except Exception as e:
         log_debug(None, f"TTS APIへのアクセス中にエラーが発生しました: {e}")
         return None
+
 
 async def audio_player_task(guild_id: int):
     """各サーバーで独立して動作する音声再生バックグラウンドタスク"""
@@ -142,7 +151,9 @@ async def audio_player_task(guild_id: int):
         try:
             session = guild_sessions.get(guild_id)
             if not session:
-                log_debug(guild_id, "セッションが見つからないため、再生タスクを停止します。")
+                log_debug(
+                    guild_id, "セッションが見つからないため、再生タスクを停止します。"
+                )
                 break
 
             text = await session.queue.get()
@@ -160,7 +171,7 @@ async def audio_player_task(guild_id: int):
             log_debug(guild_id, "音声合成に成功しました。")
 
             source = discord.FFmpegPCMAudio(io.BytesIO(audio_data), pipe=True)
-            
+
             log_debug(guild_id, "音声を再生します...")
             session.voice_client.play(source)
 
@@ -173,9 +184,12 @@ async def audio_player_task(guild_id: int):
             break
         except Exception as e:
             log_debug(guild_id, f"再生タスクで予期せぬエラーが発生しました: {e}")
-            await asyncio.sleep(5) # タスクがクラッシュしないように待機
+            await asyncio.sleep(5)  # タスクがクラッシュしないように待機
 
-def process_text_for_speech(message: discord.Message, dictionary: dict) -> Optional[str]:
+
+def process_text_for_speech(
+    message: discord.Message, dictionary: dict
+) -> Optional[str]:
     """メッセージを読み上げ用に加工する"""
     text_to_read = message.clean_content
     for word, reading in dictionary.items():
@@ -198,11 +212,12 @@ async def on_ready():
     dictionaries = load_data(DICT_FILE)
     log_debug(None, f"{bot.user} としてログインしました。")
 
+
 @bot.event
 async def on_message(message: discord.Message):
     if message.author.bot or not message.guild:
         return
-    
+
     guild_id = message.guild.id
     session = guild_sessions.get(guild_id)
 
@@ -218,7 +233,9 @@ async def on_message(message: discord.Message):
         # 再生中か、キューに何かあればスキップ可能
         can_skip = session.voice_client.is_playing() or not session.queue.empty()
         if can_skip:
-            log_debug(guild_id, "スキップ処理中... キューをクリアし、再生を停止します。")
+            log_debug(
+                guild_id, "スキップ処理中... キューをクリアし、再生を停止します。"
+            )
             # キューの中身をすべて空にする
             while not session.queue.empty():
                 try:
@@ -228,21 +245,24 @@ async def on_message(message: discord.Message):
             # 現在再生中であれば停止する
             if session.voice_client.is_playing():
                 session.voice_client.stop()
-            await message.add_reaction("⏩") # スキップ成功のリアクション
+            await message.add_reaction("⏩")  # スキップ成功のリアクション
         else:
             log_debug(guild_id, "スキップ対象がありません。")
-            await message.add_reaction("❌") # スキップ対象がない場合のリアクション
-        return # 's'という文字を読み上げさせないために、ここで処理を終了する
+            await message.add_reaction("❌")  # スキップ対象がない場合のリアクション
+        return  # 's'という文字を読み上げさせないために、ここで処理を終了する
 
     dictionary = dictionaries.get(str(guild_id), {})
     text_to_speak = process_text_for_speech(message, dictionary)
-    
+
     if text_to_speak:
         log_debug(guild_id, f"キューに追加: '{text_to_speak[:30]}...'")
         await session.queue.put(text_to_speak)
 
+
 @bot.event
-async def on_voice_state_update(member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
+async def on_voice_state_update(
+    member: discord.Member, before: discord.VoiceState, after: discord.VoiceState
+):
     if member.id == bot.user.id:
         return
 
@@ -267,14 +287,26 @@ async def on_voice_state_update(member: discord.Member, before: discord.VoiceSta
 vc_group = SlashCommandGroup("vc", "ボイスチャンネル関連の操作")
 dict_group = SlashCommandGroup("dict", "読み上げ辞書関連のコマンド")
 
+
 # --- VC関連コマンド ---
-@vc_group.command(name="join", description="VCに参加し、このチャンネルの読み上げを開始します。")
+@vc_group.command(
+    name="join", description="VCに参加し、このチャンネルの読み上げを開始します。"
+)
 async def vc_join(ctx: discord.ApplicationContext):
+    await ctx.defer()  # 先に応答を保留する
+
     guild_id = ctx.guild.id
     log_debug(guild_id, f"/vc join が {ctx.author} によって実行されました。")
 
     if not ctx.author.voice:
-        return await ctx.respond(embed=create_embed(f"{EMOJI_ERROR} エラー", "先にボイスチャンネルに参加してください。", discord.Color.red()), ephemeral=True)
+        return await ctx.followup.send(
+            embed=create_embed(
+                f"{EMOJI_ERROR} エラー",
+                "先にボイスチャンネルに参加してください。",
+                discord.Color.red(),
+            ),
+            ephemeral=True,
+        )
 
     voice_channel = ctx.author.voice.channel
 
@@ -282,7 +314,7 @@ async def vc_join(ctx: discord.ApplicationContext):
         log_debug(guild_id, "既存のセッションを停止・削除します。")
         guild_sessions[guild_id].stop()
         del guild_sessions[guild_id]
-    
+
     if ctx.guild.voice_client:
         await ctx.guild.voice_client.disconnect(force=True)
 
@@ -299,21 +331,38 @@ async def vc_join(ctx: discord.ApplicationContext):
         guild_sessions[guild_id] = session
         log_debug(guild_id, "新しいセッションの作成に成功しました。")
 
-        embed = create_embed(f"{EMOJI_VC} 接続しました", f"**{voice_channel.name}** に参加しました。")
+        embed = create_embed(
+            f"{EMOJI_VC} 接続しました", f"**{voice_channel.name}** に参加しました。"
+        )
         embed.add_field(name="読み上げチャンネル", value=ctx.channel.mention)
-        await ctx.respond(embed=embed)
+        await ctx.followup.send(embed=embed)
 
     except Exception as e:
         log_debug(guild_id, f"VCへの参加に失敗しました: {e}")
-        await ctx.respond(embed=create_embed(f"{EMOJI_ERROR} エラー", f"接続に失敗しました: {e}", discord.Color.red()), ephemeral=True)
+        await ctx.followup.send(
+            embed=create_embed(
+                f"{EMOJI_ERROR} エラー", f"接続に失敗しました: {e}", discord.Color.red()
+            ),
+            ephemeral=True,
+        )
+
 
 @vc_group.command(name="leave", description="VCから退出します。")
 async def vc_leave(ctx: discord.ApplicationContext):
+    await ctx.defer()  # 先に応答を保留する
+
     guild_id = ctx.guild.id
     log_debug(guild_id, f"/vc leave が {ctx.author} によって実行されました。")
 
     if not ctx.guild.voice_client:
-        return await ctx.respond(embed=create_embed(f"{EMOJI_ERROR} エラー", "BotはVCに参加していません。", discord.Color.red()), ephemeral=True)
+        return await ctx.followup.send(
+            embed=create_embed(
+                f"{EMOJI_ERROR} エラー",
+                "BotはVCに参加していません。",
+                discord.Color.red(),
+            ),
+            ephemeral=True,
+        )
 
     if guild_id in guild_sessions:
         log_debug(guild_id, "再生タスクを停止し、セッションを削除します。")
@@ -322,21 +371,37 @@ async def vc_leave(ctx: discord.ApplicationContext):
 
     await ctx.guild.voice_client.disconnect()
     log_debug(guild_id, "VCから切断しました。")
-    await ctx.respond(embed=create_embed(f"{EMOJI_WAVE} 退出しました", "ボイスチャンネルから退出しました。"))
+    await ctx.followup.send(
+        embed=create_embed(
+            f"{EMOJI_WAVE} 退出しました", "ボイスチャンネルから退出しました。"
+        )
+    )
+
 
 @vc_group.command(name="mute", description="読み上げを一時的に停止します。")
 async def vc_mute(ctx: discord.ApplicationContext):
     session = guild_sessions.get(ctx.guild.id)
     if session:
         session.is_muted = True
-        await ctx.respond(embed=create_embed(f"{EMOJI_MUTE} ミュートしました", "メッセージの読み上げを停止します。\n`/vc unmute` で再開できます。"))
+        await ctx.respond(
+            embed=create_embed(
+                f"{EMOJI_MUTE} ミュートしました",
+                "メッセージの読み上げを停止します。\n`/vc unmute` で再開できます。",
+            )
+        )
+
 
 @vc_group.command(name="unmute", description="読み上げのミュートを解除します。")
 async def vc_unmute(ctx: discord.ApplicationContext):
     session = guild_sessions.get(ctx.guild.id)
     if session:
         session.is_muted = False
-        await ctx.respond(embed=create_embed(f"{EMOJI_UNMUTE} ミュート解除", "メッセージの読み上げを再開します。"))
+        await ctx.respond(
+            embed=create_embed(
+                f"{EMOJI_UNMUTE} ミュート解除", "メッセージの読み上げを再開します。"
+            )
+        )
+
 
 # --- 辞書関連コマンド ---
 @dict_group.command(name="add", description="辞書に単語と読みを登録します。")
@@ -346,7 +411,14 @@ async def dict_add(ctx: discord.ApplicationContext, word: str, reading: str):
         dictionaries[guild_id] = {}
     dictionaries[guild_id][word] = reading
     save_data(DICT_FILE, dictionaries)
-    await ctx.respond(embed=create_embed(f"{EMOJI_SUCCESS} 辞書登録", f"「**{word}**」を「**{reading}**」として登録しました。"), ephemeral=True)
+    await ctx.respond(
+        embed=create_embed(
+            f"{EMOJI_SUCCESS} 辞書登録",
+            f"「**{word}**」を「**{reading}**」として登録しました。",
+        ),
+        ephemeral=True,
+    )
+
 
 @dict_group.command(name="remove", description="辞書から単語を削除します。")
 async def dict_remove(ctx: discord.ApplicationContext, word: str):
@@ -354,19 +426,40 @@ async def dict_remove(ctx: discord.ApplicationContext, word: str):
     if guild_id in dictionaries and word in dictionaries[guild_id]:
         del dictionaries[guild_id][word]
         save_data(DICT_FILE, dictionaries)
-        await ctx.respond(embed=create_embed(f"{EMOJI_SUCCESS} 辞書削除", f"「**{word}**」を削除しました。"), ephemeral=True)
+        await ctx.respond(
+            embed=create_embed(
+                f"{EMOJI_SUCCESS} 辞書削除", f"「**{word}**」を削除しました。"
+            ),
+            ephemeral=True,
+        )
     else:
-        await ctx.respond(embed=create_embed(f"{EMOJI_ERROR} エラー", f"「**{word}**」は見つかりませんでした。", discord.Color.red()), ephemeral=True)
+        await ctx.respond(
+            embed=create_embed(
+                f"{EMOJI_ERROR} エラー",
+                f"「**{word}**」は見つかりませんでした。",
+                discord.Color.red(),
+            ),
+            ephemeral=True,
+        )
+
 
 @dict_group.command(name="list", description="登録されている単語の一覧を表示します。")
 async def dict_list(ctx: discord.ApplicationContext):
     guild_id = str(ctx.guild.id)
     dictionary = dictionaries.get(guild_id, {})
     if not dictionary:
-        return await ctx.respond(embed=create_embed(f"{EMOJI_DICT} 辞書一覧", "辞書は空です。"), ephemeral=True)
-    
-    embed = create_embed(f"{EMOJI_DICT} {ctx.guild.name} の辞書一覧", "\n".join([f"・`{w}` → `{r}`" for w, r in dictionary.items()]), discord.Color.green())
+        return await ctx.respond(
+            embed=create_embed(f"{EMOJI_DICT} 辞書一覧", "辞書は空です。"),
+            ephemeral=True,
+        )
+
+    embed = create_embed(
+        f"{EMOJI_DICT} {ctx.guild.name} の辞書一覧",
+        "\n".join([f"・`{w}` → `{r}`" for w, r in dictionary.items()]),
+        discord.Color.green(),
+    )
     await ctx.respond(embed=embed, ephemeral=True)
+
 
 @bot.slash_command(name="help", description="Botのコマンド一覧と使い方を表示します。")
 async def help_command(ctx: discord.ApplicationContext):
@@ -374,7 +467,7 @@ async def help_command(ctx: discord.ApplicationContext):
         f"{EMOJI_HELP} HIKAKIN読み上げBot ヘルプ",
         "TikTokのHIKAKINボイスでメッセージを読み上げるBotです。\n各コマンドの詳しい使い方を以下に示します。",
     )
-    
+
     vc_description = (
         "`/vc join`: あなたがいるVCに参加し、このチャンネルの読み上げを開始します。\n"
         "`/vc leave`: VCから退出します。\n"
@@ -398,8 +491,9 @@ async def help_command(ctx: discord.ApplicationContext):
         "**VCへの参加/退出通知**: ユーザーがVCに出入りすると、その旨を読み上げます。"
     )
     embed.add_field(name="✨ その他の機能", value=other_description, inline=False)
-    
+
     await ctx.respond(embed=embed, ephemeral=True)
+
 
 # --- コマンド登録 ---
 bot.add_application_command(vc_group)
